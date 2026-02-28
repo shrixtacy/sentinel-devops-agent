@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { updateFeedback } = require('../db/incident-memory');
 
-router.post('/feedback/:incidentId', (req, res) => {
+router.post('/:incidentId', (req, res) => {
     try {
         const { incidentId } = req.params;
         const { isPositive } = req.body;

@@ -101,10 +101,10 @@ export function IncidentCard({ incident, onViewReasoning }: IncidentCardProps) {
                                     <div className="h-1.5 w-24 bg-white/10 rounded-full overflow-hidden">
                                         <div
                                             className="h-full bg-green-500 rounded-full"
-                                            style={{ width: `${(incident.confidence || 0.85) * 100}%` }}
+                                            style={{ width: `${(incident.confidence ?? 0.85) * 100}%` }}
                                         />
                                     </div>
-                                    <span className="text-gray-400">{(incident.confidence || 0.85) * 100}%</span>
+                                    <span className="text-gray-400">{(incident.confidence ?? 0.85) * 100}%</span>
                                 </div>
                             </div>
 

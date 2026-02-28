@@ -49,7 +49,8 @@ app.use(metricsMiddleware); // Metrics middleware
 // Rate limiters
 app.use('/api', apiLimiter);
 
-app.use('/api/feedback', feedbackRoutes);
+// Require authentication for feedback
+app.use('/api/feedback', requireAuth, feedbackRoutes);
 
 // Security Routes
 const securityRoutes = require('./routes/security.routes');

@@ -1,9 +1,13 @@
+const crypto = require('crypto');
+
 function generateFingerprint(incident) {
   const tokens = [];
 
-  // Remove numeric suffixes from container names (e.g., api-service-2 -> api-service)
+  // Hash container names for privacy
   if (incident.containerName) {
-      tokens.push(incident.containerName.replace(/[-_]\d+$/, ''));
+      const normalized = incident.containerName.replace(/[-_]\d+$/, '').toLowerCase();
+      const hash = crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 12);
+      tokens.push(`container:${hash}`);
   }
 
   const metrics = incident.metrics || {};
@@ -19,7 +23,8 @@ function generateFingerprint(incident) {
   if (logText.includes('error') || logText.includes('exception') || logText.includes('fail')) tokens.push('error');
   if (logText.includes('crash') || logText.includes('sigkill')) tokens.push('crash');
 
-  const hour = new Date().getHours();
+  const eventTime = incident.timestamp ? new Date(incident.timestamp) : new Date();
+  const hour = Number.isNaN(eventTime.getTime()) ? new Date().getHours() : eventTime.getHours();
   tokens.push(hour < 6 ? 'night' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening');
 
   return tokens;
