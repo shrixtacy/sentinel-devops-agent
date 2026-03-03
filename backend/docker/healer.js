@@ -58,16 +58,19 @@ async function restartContainer(containerId) {
         const metrics = containerMonitor.getMetrics(containerId)?.raw || {};
         
         // Emit: Evidence collected - Metrics
-        const cpuHigh = metrics.cpuPercent > 80;
+        const cpuPercent = Number.isFinite(metrics.cpuPercent) ? metrics.cpuPercent : null;
+        const cpuHigh = cpuPercent !== null && cpuPercent > 80;
         emitReasoningSafe(incidentId, {
             type: 'evidence_collected',
-            description: cpuHigh 
-                ? `High CPU usage detected: ${metrics.cpuPercent?.toFixed(1)}% (threshold: 80%)`
-                : `CPU usage within limits: ${metrics.cpuPercent?.toFixed(1)}% (threshold: 80%)`,
+            description: cpuPercent === null
+                ? 'CPU metric unavailable (threshold: 80%)'
+                : cpuHigh
+                    ? `High CPU usage detected: ${cpuPercent.toFixed(1)}% (threshold: 80%)`
+                    : `CPU usage within limits: ${cpuPercent.toFixed(1)}% (threshold: 80%)`,
             confidence: cpuHigh ? 0.3 : 0.1,
             evidence: {
                 metric: 'cpu_percent',
-                value: metrics.cpuPercent,
+                value: cpuPercent,
                 threshold: 80,
                 unit: '%',
                 breached: cpuHigh
@@ -346,6 +349,18 @@ async function recreateContainer(containerId) {
 
 async function scaleService(serviceName, replicas) {
     const incidentId = `inc-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+    const targetReplicas = Number(replicas);
+    if (!Number.isInteger(targetReplicas) || targetReplicas < 0) {
+        const errorMsg = `Invalid replica count: ${replicas}`;
+        emitReasoningSafe(incidentId, {
+            type: 'conclusion_reached',
+            description: `Scaling aborted: ${errorMsg}`,
+            confidence: 0.95,
+            evidence: { action: 'scale', status: 'failed', error: errorMsg }
+        });
+        return { action: 'scale', replicas, success: false, error: errorMsg, incidentId };
+    }
+
     try {
         emitReasoningSafe(incidentId, {
             type: 'investigation_started',
@@ -365,7 +380,7 @@ async function scaleService(serviceName, replicas) {
             evidence: {
                 metric: 'replica_count',
                 current: currentReplicas,
-                target: parseInt(replicas, 10),
+                target: targetReplicas,
                 service: serviceName
             }
         });
@@ -384,7 +399,7 @@ async function scaleService(serviceName, replicas) {
         const spec = { ...info.Spec };
         if (!spec.Mode) spec.Mode = {};
         if (!spec.Mode.Replicated) spec.Mode.Replicated = {};
-        spec.Mode.Replicated.Replicas = parseInt(replicas, 10);
+        spec.Mode.Replicated.Replicas = targetReplicas;
 
         emitReasoningSafe(incidentId, {
             type: 'action_triggered',
@@ -392,7 +407,7 @@ async function scaleService(serviceName, replicas) {
             confidence: 0.8,
             evidence: {
                 action: 'scale',
-                targetReplicas: parseInt(replicas, 10)
+                targetReplicas: targetReplicas
             }
         });
 
@@ -408,7 +423,7 @@ async function scaleService(serviceName, replicas) {
             evidence: {
                 action: 'scale',
                 status: 'success',
-                finalReplicas: parseInt(replicas, 10)
+                finalReplicas: targetReplicas
             }
         });
 

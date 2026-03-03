@@ -37,20 +37,28 @@ router.get('/stream/:incidentId', (req, res) => {
     return res.sendStatus(200);
   }
 
-  // Replay existing history first
+  const sent = new Set();
+  const getStepKey = (step) =>
+    step.stepIndex ?? `${step.ts ?? 'na'}:${step.type}:${step.description}`;
+
+  // Register listener first to close the replay/subscribe race.
+  const handler = (step) => {
+    if (step.incidentId !== incidentId) return;
+    const key = getStepKey(step);
+    if (sent.has(key)) return;
+    sent.add(key);
+    res.write(`data: ${JSON.stringify(step)}\n\n`);
+  };
+  reasoningEmitter.on(`incident:${incidentId}`, handler);
+
+  // Replay history (deduped against in-flight deliveries).
   const history = reasoningEmitter.getHistory(incidentId);
   history.forEach(step => {
+    const key = getStepKey(step);
+    if (sent.has(key)) return;
+    sent.add(key);
     res.write(`data: ${JSON.stringify(step)}\n\n`);
   });
-
-  // Register listener for new steps
-  const handler = (step) => {
-    if (step.incidentId === incidentId) {
-      res.write(`data: ${JSON.stringify(step)}\n\n`);
-    }
-  };
-
-  reasoningEmitter.on(`incident:${incidentId}`, handler);
 
   // Handle client disconnect
   req.on('close', () => {
