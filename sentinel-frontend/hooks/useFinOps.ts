@@ -59,7 +59,7 @@ export function useFinOps() {
             setHeatmapData(heatmapRes.data.heatmap || []);
             setError(null);
         } catch (err) {
-            console.error('FinOps fetch error:', err);
+            console.warn('FinOps fetch error:', err);
             setError('Failed to load FinOps data');
         } finally {
             setLoading(false);
@@ -72,7 +72,7 @@ export function useFinOps() {
             await axios.post(`${API_BASE}/api/finops/analyze`);
             await fetchAll();
         } catch (err) {
-            console.error('FinOps analyze error:', err);
+            console.warn('FinOps analyze error:', err);
             setError('Analysis failed');
         } finally {
             setAnalyzing(false);
@@ -84,7 +84,7 @@ export function useFinOps() {
             await axios.post(`${API_BASE}/api/finops/recommendations/${id}/apply`);
             await fetchAll();
         } catch (err) {
-            console.error('FinOps apply error:', err);
+            console.warn('FinOps apply error:', err);
             setError('Failed to apply recommendation');
         }
     }, [fetchAll]);
@@ -94,7 +94,7 @@ export function useFinOps() {
             await axios.post(`${API_BASE}/api/finops/recommendations/${id}/dismiss`);
             await fetchAll();
         } catch (err) {
-            console.error('FinOps dismiss error:', err);
+            console.warn('FinOps dismiss error:', err);
             setError('Failed to dismiss recommendation');
         }
     }, [fetchAll]);
