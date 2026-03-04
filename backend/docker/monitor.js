@@ -1,13 +1,20 @@
 const { docker } = require('./client');
-const store = require('../db/metrics-store');
 const { scanImage } = require('../security/scanner');
+const EventEmitter = require('events');
+const metricsStore = require('../db/metrics-store');
+const { predictContainer } = require('./predictor');
 
-class ContainerMonitor {
+class ContainerMonitor extends EventEmitter {
     constructor() {
+        super();
         this.metrics = new Map();
         this.watchers = new Map();
         this.lastStorePush = new Map();
         this.securityTimers = new Map();
+        this.restartCounts = new Map();
+        this.containerNames = new Map();
+        this.lastInspectTimes = new Map();
+        this.lastPredictTimes = new Map();
     }
 
     async startMonitoring(containerId) {
@@ -17,6 +24,11 @@ class ContainerMonitor {
             const container = docker.getContainer(containerId);
             const data = await container.inspect();
             const imageId = data.Image;
+            
+            // Track initial restart count
+            this.restartCounts.set(containerId, data.RestartCount || 0);
+            // Track container name
+            this.containerNames.set(containerId, data.Name.replace(/^\//, ''));
 
             const stream = await container.stats({ stream: true });
 
@@ -25,25 +37,46 @@ class ContainerMonitor {
             // Schedule periodic scans after successful stream setup
             this.scheduleSecurityScan(containerId, imageId);
 
-            stream.on('data', (chunk) => {
+            stream.on('data', async (chunk) => {
                 try {
                     const stats = JSON.parse(chunk.toString());
                     const parsed = this.parseStats(stats);
                     this.metrics.set(containerId, parsed);
 
+                    // Throttle inspect requests to every 30s to update restart counts
                     const now = Date.now();
-                    const lastPush = this.lastStorePush.get(containerId) || 0;
-                    if (now - lastPush >= 60_000) {
-                        store.push(containerId, {
-                            cpuPercent: parseFloat(parsed.cpu),
-                            memPercent: parseFloat(parsed.memory.percent)
+                    const lastInspect = this.lastInspectTimes.get(containerId) || 0;
+                    
+                    if (now - lastInspect > 30000) {
+                        this.lastInspectTimes.set(containerId, now);  // guard before await
+                        try {
+                            const currentInfo = await container.inspect();
+                            this.restartCounts.set(containerId, currentInfo.RestartCount || 0);
+                        } catch (inspectError) {
+                            // Suppress transient inspect errors
+                        }
+                    }
+
+                    const lastPredict = this.lastPredictTimes.get(containerId) || 0;
+
+                    if (now - lastPredict > 5000) {
+                        metricsStore.push(containerId, { 
+                            cpuPercent: parsed.raw.cpuPercent, 
+                            memPercent: parsed.raw.memPercent, 
+                            restartCount: this.restartCounts.get(containerId) || 0 
                         });
-                        this.lastStorePush.set(containerId, now);
+
+                        const prediction = predictContainer(containerId);
+                        if (prediction && prediction.probability > 0.3) {
+                            this.emit('prediction', { ...prediction, containerName: this.containerNames.get(containerId) });
+                        }
+                        this.lastPredictTimes.set(containerId, now);
                     }
                 } catch (e) {
                     // Ignore parse errors from partial chunks
                 }
             });
+
 
             stream.on('error', (err) => {
                 console.error(`Stream error for ${containerId}:`, err);
@@ -62,12 +95,18 @@ class ContainerMonitor {
     }
 
     stopMonitoring(containerId) {
-        const stream = this.watchers.get(containerId);
-        if (stream && stream.destroy) stream.destroy();
-        this.watchers.delete(containerId);
-        this.metrics.delete(containerId);
-        this.lastStorePush.delete(containerId);
-        store.clear(containerId);
+        if (this.watchers.has(containerId)) {
+            const stream = this.watchers.get(containerId);
+            if (stream && stream.destroy) stream.destroy();
+            this.watchers.delete(containerId);
+            this.metrics.delete(containerId);
+            this.lastStorePush.delete(containerId);
+            if (this.lastPredictTimes) this.lastPredictTimes.delete(containerId);
+            this.restartCounts.delete(containerId);
+            this.containerNames.delete(containerId);
+            this.lastInspectTimes.delete(containerId);
+            metricsStore.clear(containerId);
+        }
         if (this.securityTimers.has(containerId)) {
             clearInterval(this.securityTimers.get(containerId));
             this.securityTimers.delete(containerId);

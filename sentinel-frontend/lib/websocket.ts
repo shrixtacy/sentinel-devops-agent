@@ -18,6 +18,8 @@ export interface IncidentNewPayload {
     [key: string]: unknown;
 }
 
+import { Prediction } from '@/components/dashboard/PredictionBadge';
+
 export interface ActivityLogPayload {
     id: number;
     timestamp: string;
@@ -45,6 +47,7 @@ export type WebSocketMessage =
     | { type: 'METRICS'; data: MetricsPayload }
     | { type: 'INCIDENT_NEW'; data: IncidentNewPayload }
     | { type: 'INCIDENT_RESOLVED'; data: { id: string } }
+    | { type: 'PREDICTION'; data: Prediction }
     | { type: 'ACTIVITY_LOG'; data: ActivityLogPayload }
     | { type: 'CONTAINER_UPDATE'; data: ContainerUpdatePayload };
 
