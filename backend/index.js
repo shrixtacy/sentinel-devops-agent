@@ -82,6 +82,10 @@ const feedbackRoutes = require('./routes/feedback.routes');
 // Reasoning Routes - AI Transparency
 const reasoningRoutes = require('./routes/reasoning.routes');
 
+// FinOps Routes & Collector
+const finopsRoutes = require('./finops/routes');
+const { startCollector: startFinOpsCollector } = require('./finops/metricsCollector');
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
@@ -115,6 +119,9 @@ app.use('/auth', authRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/roles', rolesRoutes);
 app.use('/api/approvals', approvalsRoutes);
+
+// FinOps Routes
+app.use('/api/finops', finopsRoutes);
 
 // Distributed Traces Routes
 app.use('/api/traces', traceRoutes);
@@ -659,6 +666,8 @@ let globalWsBroadcaster;
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Sentinel Backend running on http://0.0.0.0:${PORT}`);
+  // Start FinOps metrics collector
+  startFinOpsCollector();
 });
 
 // Setup WebSocket
@@ -667,17 +676,17 @@ serviceMonitor.setWsBroadcaster(globalWsBroadcaster);
 
 // Listen for container predictions
 containerMonitor.on('prediction', (prediction) => {
-    if (prediction.probability > 0.8 && prediction.confidence !== 'low') {
-        incidents.logActivity('alert', `🔮 Prediction: Container ${prediction.containerId.substring(0, 12)} risk ${Math.round(prediction.probability * 100)}%. ${prediction.reason}`);
-        
-        if (prediction.probability > 0.85) {
-            console.log(`[Healing] manual intervention recommended for ${prediction.containerId}`);
-        }
-    }
+  if (prediction.probability > 0.8 && prediction.confidence !== 'low') {
+    incidents.logActivity('alert', `🔮 Prediction: Container ${prediction.containerId.substring(0, 12)} risk ${Math.round(prediction.probability * 100)}%. ${prediction.reason}`);
 
-    if (globalWsBroadcaster) {
-        globalWsBroadcaster.broadcast('PREDICTION', prediction);
+    if (prediction.probability > 0.85) {
+      console.log(`[Healing] manual intervention recommended for ${prediction.containerId}`);
     }
+  }
+
+  if (globalWsBroadcaster) {
+    globalWsBroadcaster.broadcast('PREDICTION', prediction);
+  }
 });
 
 // K8s Watcher Event Handling
